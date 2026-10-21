@@ -27,8 +27,15 @@ for (let i = 0; i < 35; i++) imageManifest["seq" + i] = `assets/menu/seq/${Strin
 const BGM = {
   menu: new Audio("assets/bgm/menu.mp3"),
   cg: new Audio("assets/bgm/cg.mp3"),
+  level: new Audio("assets/bgm/level.mp3"),       // 第一版（轻松日常）：进入游戏画面后循环
 };
-BGM.menu.loop = true; BGM.cg.loop = true;
+BGM.menu.loop = true; BGM.cg.loop = true; BGM.level.loop = true;
+// 音效：脚步声（行走时循环）
+const SFX = {
+  steps: new Audio("assets/sfx/footsteps.mp3"),
+};
+SFX.steps.loop = true;
+SFX.steps.volume = 0.55;
 
 let loaded = 0, loadTotal = 0;
 function loadImages() {
@@ -47,7 +54,7 @@ let audioUnlocked = false;
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  if (currentScene && currentScene.bgm) fadeVolume(currentScene.bgm, 1, 1.2);
+  if (currentScene && currentScene.bgm) fadeVolume(currentScene.bgm, currentScene.bgmTarget ?? 1, 1.2);
 }
 window.addEventListener("pointerdown", unlockAudio, { once: false });
 window.addEventListener("keydown", unlockAudio, { once: false });
@@ -395,7 +402,8 @@ const DIALOGUE_LINES = [
 ];
 
 const levelScene = {
-  bgm: null,
+  bgm: BGM.level,
+  bgmTarget: 0.7,
   // 玩家状态（对应 player.gd）
   px: 136, py: 495, vx: 0, vy: 0, onFloor: false, faceLeft: false,
   animTime: 0, anim: "idle",
@@ -411,6 +419,11 @@ const levelScene = {
 
   enter() {
     showLayer(null);
+    // 进入游戏画面：循环播放第一版 BGM（轻松日常）
+    BGM.level.currentTime = 0;
+    BGM.level.volume = audioUnlocked ? this.bgmTarget : 0;
+    BGM.level.play().catch(() => {});
+    SFX.steps.pause(); SFX.steps.currentTime = 0;
     this.px = 136; this.py = 495; this.vx = 0; this.vy = 0;
     this.faceLeft = false; this.anim = "idle"; this.animTime = 0;
     this.camX = Math.min(Math.max(this.px, CAM.minX), CAM.maxX);
@@ -531,6 +544,11 @@ const levelScene = {
     this.py = ny;
     if (this.py > 900) { this.px = 136; this.py = 495; this.vx = this.vy = 0; } // 兜底重生
 
+    /* --- 脚步声：在地面行走时循环播放，停下 / 离地 / 对话时即停 --- */
+    const walking = dir !== 0 && this.onFloor && !frozen;
+    if (walking && SFX.steps.paused && audioUnlocked) SFX.steps.play().catch(() => {});
+    if (!walking && !SFX.steps.paused) SFX.steps.pause();
+
     /* --- 相机跟随（Camera2D：平滑 + 边界） --- */
     const k = 1 - Math.exp(-CAM.smooth * dt);
     this.camX += (this.px - this.camX) * k;
@@ -638,9 +656,9 @@ const levelScene = {
     }
 
     /* --- 点光源（PointLight2D，加法混合） --- */
-    // 手上提灯：随面向换侧（±84, 48）
-    const lampOffX = this.faceLeft ? -84 : 84;
-    drawLight(wx(this.px + lampOffX), wy(this.py + 48), 111.6, 97.9, "rgb(131,79,19)", 9.25);
+    // 手上提灯：光源绑定在提灯发光核心（帧内 ≈(82,74) → 角色坐标 ±39, 25），随面向换侧
+    const lampOffX = this.faceLeft ? -39 : 39;
+    drawLight(wx(this.px + lampOffX), wy(this.py + 25), 100, 88, "rgb(255,196,110)", 9.25);
     // 路灯光：点灯后能量 0 → 1.95
     if (this.lampEnergy > 0)
       drawLight(wx(this.lampX + 24), wy(this.lampY - 23.4), 156, 140.6, "rgb(189,174,54)", this.lampEnergy);
@@ -685,6 +703,7 @@ lightButton.addEventListener("click", (e) => {
 
 function openPuzzle() {
   levelScene.puzzleOpen = true;
+  SFX.steps.pause(); // 解密期间世界冻结，脚步声停
   lightButton.classList.add("hidden");
   puzzleFrame.src = "puzzle/puzzle.html?t=" + Date.now(); // 每次都重新洗一盘
   puzzleFrame.classList.remove("hidden");
