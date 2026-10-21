@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灯芯镇最后的灯 · Demo</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="1152" height="648"></canvas>
+
+  <!-- UI 覆盖层：与画布同坐标系（1152×648），由 JS 统一缩放 -->
+  <div id="ui">
+
+    <!-- 开始菜单 -->
+    <div id="menu-ui" class="layer hidden">
+      <button id="btn-play"     class="menu-btn" style="left:698px; top:346px; width:369px; height:39px;">新游戏</button>
+      <button id="btn-continue" class="menu-btn" style="left:695px; top:387px; width:369px; height:39px;">继续</button>
+      <button id="btn-settings" class="menu-btn" style="left:695px; top:429px; width:369px; height:39px;">设置</button>
+      <div id="menu-toast" class="hidden">Demo 版本暂未开放</div>
+    </div>
+
+    <!-- 开场 CG -->
+    <div id="cg-ui" class="layer hidden">
+      <div id="cg-subtitle"></div>
+      <div id="cg-hint">点击继续...</div>
+    </div>
+
+    <!-- 点灯剧情对话（视觉小说式） -->
+    <div id="dialogue-ui" class="layer hidden">
+      <div id="dlg-band"></div>
+      <img id="dlg-portrait" src="assets/portrait/jin.png" alt="烬">
+      <div id="dlg-name">烬</div>
+      <div id="dlg-text"></div>
+      <div id="dlg-next">▼</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="js/tiles.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

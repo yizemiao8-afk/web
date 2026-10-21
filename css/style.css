@@ -1,0 +1,127 @@
+/* ===== 灯芯镇最后的灯 · Web Demo ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+#game {
+  display: block;
+  image-rendering: pixelated;   /* 像素风：最近邻放大 */
+  background: #000;
+}
+
+#ui {
+  position: absolute;
+  left: 0; top: 0;
+  width: 1152px; height: 648px;
+  transform-origin: left top;
+  overflow: hidden;
+  pointer-events: none;         /* 默认不挡画布，按钮单独打开 */
+}
+
+.layer { position: absolute; inset: 0; }
+.hidden { display: none !important; }
+
+/* ===== 开始菜单按钮（Godot flat Button 复刻） ===== */
+.menu-btn {
+  position: absolute;
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  color: #e8e8e8;
+  font-size: 22px;
+  font-family: inherit;
+  text-align: left;
+  padding-left: 8px;
+  cursor: pointer;
+  transition: color .15s, text-shadow .15s;
+}
+.menu-btn:hover {
+  color: #ffd890;
+  text-shadow: 0 0 12px rgba(255, 200, 120, .8);
+}
+
+#menu-toast {
+  position: absolute;
+  left: 50%; top: 500px;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,.75);
+  font-size: 18px;
+  letter-spacing: 2px;
+  transition: opacity .4s;
+}
+
+/* ===== 开场 CG 字幕 ===== */
+#cg-subtitle {
+  position: absolute;
+  left: 152px; right: 152px; bottom: 80px; height: 100px;
+  color: rgba(230, 230, 217, 1);
+  font-size: 32px;
+  line-height: 1.5;
+  text-align: center;
+  text-shadow: 2px 2px 3px rgba(0,0,0,.8);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .4s;
+}
+#cg-hint {
+  position: absolute;
+  left: 452px; width: 200px; bottom: 30px; height: 30px;
+  color: rgba(178, 178, 178, 1);
+  font-size: 20px;
+  text-align: center;
+  animation: blink 2s infinite;
+}
+#cg-hint.gold { color: #ffd700; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* ===== 点灯对话（lamp_balloon 复刻） ===== */
+#dlg-band {
+  position: absolute;
+  left: 0; right: 0; top: 58%; bottom: 0;
+  background: linear-gradient(to bottom,
+    rgba(0,0,0,0) 0%,
+    rgba(0.01,0.01,0.04,0.55) 45%,
+    rgba(0.015,0.015,0.06,0.9) 100%);
+}
+#dlg-portrait {
+  position: absolute;
+  left: 4%; bottom: 0;
+  height: 82%;
+  filter: drop-shadow(0 0 18px rgba(0,0,0,.6));
+}
+#dlg-name {
+  position: absolute;
+  top: calc(58% + 5.5%);
+  color: rgb(148, 227, 222);
+  font-size: 34px;
+  text-shadow: 0 0 5px rgba(0,0,0,.85), 2px 2px 5px rgba(0,0,0,.85);
+}
+#dlg-text {
+  position: absolute;
+  top: calc(58% + 5.5% + 56px);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1.6;
+  text-shadow: 0 0 5px rgba(0,0,0,.85), 2px 2px 5px rgba(0,0,0,.85);
+  white-space: pre-wrap;
+}
+#dlg-next {
+  position: absolute;
+  left: 94%; top: 90%;
+  color: rgba(255,255,255,.8);
+  font-size: 22px;
+  animation: dlgblink 1.4s infinite;
+}
+@keyframes dlgblink { 0%,100% { opacity: .9; } 50% { opacity: .15; } }
