@@ -16,8 +16,10 @@ const host = arg("host", "0.0.0.0");
 const port = Number(arg("port", "7100"));
 
 const MIME = {
-  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
-  ".png": "image/png", ".jpg": "image/jpeg", ".mp3": "audio/mpeg", ".json": "application/json",
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".css": "text/css", ".json": "application/json",
+  ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
+  ".mp3": "audio/mpeg", ".wasm": "application/wasm", ".task": "application/octet-stream",
 };
 
 createServer(async (req, res) => {

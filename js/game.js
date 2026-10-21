@@ -13,16 +13,16 @@ ctx.imageSmoothingEnabled = false;
 /* ---------- 资源加载 ---------- */
 const IMG = {};
 const imageManifest = {
-  bg0: "assets/bg/0.png", bg2: "assets/bg/2.png", bg4: "assets/bg/4.png", bg5: "assets/bg/5.png",
-  idle: "assets/player/idle2.png", walk: "assets/player/walk.png",
-  circle: "assets/fx/circle.png", ember: "assets/fx/ember.png",
-  tileset: "assets/tile/tileset2.png", lamp: "assets/light/lamp.png",
-  title: "assets/menu/title.png",
-  cg1: "assets/cg/1.jpg", cg2: "assets/cg/2.png", cg3: "assets/cg/3.jpg", cg4: "assets/cg/4.png",
-  cg5: "assets/cg/5.png", cg6: "assets/cg/6.png", cg7: "assets/cg/7.png", cg8: "assets/cg/8.png",
+  bg0: "assets/bg/0.webp", bg2: "assets/bg/2.webp", bg4: "assets/bg/4.webp",
+  idle: "assets/player/idle2.webp", walk: "assets/player/walk.webp",
+  circle: "assets/fx/circle.webp", ember: "assets/fx/ember.webp",
+  tileset: "assets/tile/tileset2.webp", lamp: "assets/light/lamp.webp",
+  title: "assets/menu/title.webp",
+  cg1: "assets/cg/1.webp", cg2: "assets/cg/2.webp", cg3: "assets/cg/3.webp", cg4: "assets/cg/4.webp",
+  cg5: "assets/cg/5.webp", cg6: "assets/cg/6.webp", cg7: "assets/cg/7.webp", cg8: "assets/cg/8.webp",
 };
 const menuSeq = []; // 35 帧菜单背景动画
-for (let i = 0; i < 35; i++) imageManifest["seq" + i] = `assets/menu/seq/${String(i).padStart(2, "0")}.png`;
+for (let i = 0; i < 35; i++) imageManifest["seq" + i] = `assets/menu/seq/${String(i).padStart(2, "0")}.webp`;
 
 const BGM = {
   menu: new Audio("assets/bgm/menu.mp3"),
@@ -360,6 +360,8 @@ const levelScene = {
   camX: 576, camY: 326,
   // 路灯状态（对应 light.gd）
   lampLit: false, lampEnergy: 0, lampX: 763, lampY: 461,
+  // 手势解密小游戏
+  puzzleOpen: false,
   // 特效
   burst: null, sparks: [],
   // 对话
@@ -372,6 +374,8 @@ const levelScene = {
     this.camX = Math.min(Math.max(this.px, CAM.minX), CAM.maxX);
     this.camY = Math.min(Math.max(this.py, CAM.minY), CAM.maxY);
     this.lampLit = false; this.lampEnergy = 0;
+    this.puzzleOpen = false;
+    puzzleFrame.classList.add("hidden");
     this.burst = null; this.sparks = [];
     this.dlg.open = false;
   },
@@ -421,6 +425,7 @@ const levelScene = {
   },
 
   update(dt) {
+    if (this.puzzleOpen) return; // 解密小游戏进行中：游戏世界冻结
     /* --- 玩家物理（player.gd） --- */
     const frozen = this.dlg.open;
     let dir = 0;
@@ -482,10 +487,10 @@ const levelScene = {
     this.camX = Math.min(Math.max(this.camX, CAM.minX), CAM.maxX);
     this.camY = Math.min(Math.max(this.camY, CAM.minY), CAM.maxY);
 
-    /* --- 路灯交互（light.gd：E 键点灯） --- */
+    /* --- 路灯交互（light.gd：E 键点灯 → 先进入手势解密小游戏） --- */
     if (!this.lampLit && !this.dlg.open && actionPressed("light")) {
       const dx = this.px - this.lampX, dy = this.py - this.lampY;
-      if (Math.hypot(dx, dy) < 120) this.lightUp();
+      if (Math.hypot(dx, dy) < 120) openPuzzle();
     }
     // 灯光能量缓慢升至目标值（3 秒，正弦缓动）
     if (this.lampLit && this.lampEnergy < 1.95) {
@@ -609,11 +614,45 @@ const levelScene = {
       ctx.fill();
     }
     ctx.restore();
-
-    // 视差第 4 层（前景，layer=100 置顶，light_mask=0 不受灯光影响）
-    this.drawParallax(IMG.bg5, 0.3, 18, scrollX, scrollY);
   },
 };
+
+/* =====================================================================
+ * 手势解密小游戏（iframe 覆盖层，puzzle/puzzle.html）
+ * 按 E 打开 → 完成一个星座的解密 → 收到 postMessage → 退出 → 灯亮
+ * ===================================================================== */
+const puzzleFrame = document.getElementById("puzzle-frame");
+
+function openPuzzle() {
+  levelScene.puzzleOpen = true;
+  puzzleFrame.src = "puzzle/puzzle.html?t=" + Date.now(); // 每次都重新洗一盘
+  puzzleFrame.classList.remove("hidden");
+  puzzleFrame.onload = () => {
+    if (puzzleFrame.contentWindow) puzzleFrame.contentWindow.focus();
+  };
+}
+
+function closePuzzle() {
+  levelScene.puzzleOpen = false;
+  puzzleFrame.classList.add("hidden");
+  puzzleFrame.src = "about:blank"; // 释放摄像头
+}
+
+// 解密成功：退出小游戏，灯才会亮起
+window.addEventListener("message", (e) => {
+  if (e.data === "puzzle-solved" && levelScene.puzzleOpen) {
+    closePuzzle();
+    levelScene.lightUp();
+  }
+});
+
+// ESC：转发给小游戏（打开 / 关闭手势教程页）
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && levelScene.puzzleOpen) {
+    e.preventDefault();
+    if (puzzleFrame.contentWindow) puzzleFrame.contentWindow.postMessage("esc", "*");
+  }
+});
 
 /* =====================================================================
  * 场景管理 + 主循环

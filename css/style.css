@@ -125,3 +125,14 @@ html, body {
   animation: dlgblink 1.4s infinite;
 }
 @keyframes dlgblink { 0%,100% { opacity: .9; } 50% { opacity: .15; } }
+
+/* ===== 手势解密小游戏覆盖层 ===== */
+#puzzle-frame {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  z-index: 50;
+  background: #05122e;
+}

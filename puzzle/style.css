@@ -1,0 +1,78 @@
+/* 全屏画布，没有滚动条 */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  background: #05122e;
+  color: #dfe8ff;
+  font-family: Georgia, "Songti SC", "SimSun", "PingFang SC", "Microsoft YaHei", serif;
+}
+
+canvas { display: block; }
+
+/* 角落里的状态提示 */
+#status {
+  position: fixed;
+  left: 16px;
+  bottom: 12px;
+  font-size: 0.9rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(5, 18, 46, 0.88);
+  pointer-events: none;
+  max-width: calc(100vw - 48px);
+  z-index: 5;
+}
+
+/* ESC 教程页 */
+#tutorial {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 18, 46, 0.92);
+  z-index: 10;
+  padding: 16px;
+  overflow-y: auto;
+  cursor: pointer;
+}
+#tutorial.hidden { display: none; }
+
+.card {
+  max-width: 600px;
+  padding: 28px 32px;
+  background: rgba(5, 18, 46, 0.95);
+  border: 2px solid #f6c86b;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.card h1 {
+  font-size: clamp(1.6rem, 5vw, 2.6rem);
+  margin: 0;
+  letter-spacing: 0.12em;
+  font-weight: normal;
+}
+
+.sub { margin: 6px 0 18px; opacity: 0.8; }
+
+.card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  line-height: 2;
+  text-align: left;
+}
+
+.card .tip { opacity: 0.65; font-size: 0.9rem; margin: 0 0 10px; }
+.card .back { color: #f6c86b; margin: 0; letter-spacing: 0.1em; }
+
+kbd {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.85em;
+}
