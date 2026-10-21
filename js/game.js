@@ -93,29 +93,71 @@ window.addEventListener("keyup", (e) => { keys[e.code] = false; });
 function actionDown(name) { return ACTIONS[name].some((c) => keys[c]); }
 function actionPressed(name) { return ACTIONS[name].some((c) => pressed[c]); }
 let clickPressed = false;
-canvas.addEventListener("pointerdown", () => { clickPressed = true; });
+
+/* ---------- 触屏手势（手机端完全手势控制） ----------
+ * 按住左半屏 → 向左走；按住右半屏 → 向右走（支持多指、滑动换区）
+ * 快速上滑 → 跳跃；靠近路灯时右下角出现「点灯」按钮
+ * 菜单 / CG / 对话：点按 = 点击 / 推进（clickPressed） */
+const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+const touchCtl = { move: 0, jump: false }; // move: -1/0/1；jump: 边沿触发，主循环末尾清除
+const touchPointers = new Map(); // pointerId -> {x, y, t, zone}
+
+function refreshTouchMove() {
+  let l = 0, r = 0;
+  for (const p of touchPointers.values()) { if (p.zone === "L") l = 1; else r = 1; }
+  touchCtl.move = r - l;
+}
+canvas.addEventListener("pointerdown", (e) => {
+  clickPressed = true;
+  if (e.pointerType !== "touch") return;
+  touchPointers.set(e.pointerId, {
+    x: e.clientX, y: e.clientY, t: performance.now(),
+    zone: e.clientX < window.innerWidth / 2 ? "L" : "R",
+  });
+  refreshTouchMove();
+});
 ui.addEventListener("pointerdown", () => { clickPressed = true; });
+window.addEventListener("pointermove", (e) => {
+  const p = touchPointers.get(e.pointerId);
+  if (!p) return;
+  p.zone = e.clientX < window.innerWidth / 2 ? "L" : "R";
+  refreshTouchMove();
+});
+function endTouchPointer(e) {
+  const p = touchPointers.get(e.pointerId);
+  if (!p) return;
+  touchPointers.delete(e.pointerId);
+  const dt = performance.now() - p.t, dy = e.clientY - p.y;
+  if (dt < 450 && dy < -50) touchCtl.jump = true; // 快速上滑 → 跳跃
+  refreshTouchMove();
+}
+window.addEventListener("pointerup", endTouchPointer);
+window.addEventListener("pointercancel", endTouchPointer);
 
 /* ---------- 缓动 ---------- */
 const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
 
-/* ---------- 加法发光（复刻 PointLight2D：circle.png 染色 + lighter 混合） ---------- */
+/* ---------- 加法发光（复刻 PointLight2D：程序化径向渐变 + lighter 混合） ---------- */
 const lightSpriteCache = {};
 function lightSprite(color) {
+  // 程序化生成径向渐变光晕：中心白热 → 彩色 → 边缘 alpha 严格为 0
+  // （不用 circle 贴图：有损压缩会让边缘 alpha 非零，加色混合下显出矩形）
   if (lightSpriteCache[color]) return lightSpriteCache[color];
+  const m = color.match(/[\d.]+/g).map(Number);
+  const [r, g, b] = m;
   const c = document.createElement("canvas");
   c.width = c.height = 800;
-  const g = c.getContext("2d");
-  if (IMG.circle) g.drawImage(IMG.circle, 0, 0);
-  else { // 兜底：径向渐变
-    const rg = g.createRadialGradient(400, 400, 0, 400, 400, 400);
-    rg.addColorStop(0, "rgba(255,255,255,1)"); rg.addColorStop(1, "rgba(255,255,255,0)");
-    g.fillStyle = rg; g.fillRect(0, 0, 800, 800);
-  }
-  g.globalCompositeOperation = "source-atop";
-  g.fillStyle = color;
-  g.fillRect(0, 0, 800, 800);
+  const g2 = c.getContext("2d");
+  const rg = g2.createRadialGradient(400, 400, 0, 400, 400, 400);
+  rg.addColorStop(0.00, `rgba(255,252,244,0.95)`);            // 白热核心
+  rg.addColorStop(0.12, `rgba(${r},${g},${b},0.85)`);
+  rg.addColorStop(0.35, `rgba(${r},${g},${b},0.42)`);
+  rg.addColorStop(0.62, `rgba(${r},${g},${b},0.14)`);
+  rg.addColorStop(0.85, `rgba(${r},${g},${b},0.03)`);
+  rg.addColorStop(1.00, `rgba(${r},${g},${b},0)`);             // 边缘收敛到 0
+  g2.fillStyle = rg;
+  g2.fillRect(0, 0, 800, 800);
   lightSpriteCache[color] = c;
   return c;
 }
@@ -378,6 +420,13 @@ const levelScene = {
     puzzleFrame.classList.add("hidden");
     this.burst = null; this.sparks = [];
     this.dlg.open = false;
+    // 触屏设备：短暂显示手势操作提示
+    if (isTouchDevice) {
+      touchHint.classList.remove("hidden");
+      touchHint.style.opacity = 1;
+      clearTimeout(this._hintT);
+      this._hintT = setTimeout(() => { touchHint.style.opacity = 0; }, 6000);
+    }
   },
 
   /* ----- 点灯（light.gd: light_up） ----- */
@@ -429,7 +478,9 @@ const levelScene = {
     /* --- 玩家物理（player.gd） --- */
     const frozen = this.dlg.open;
     let dir = 0;
-    if (!frozen) dir = (actionDown("right") ? 1 : 0) - (actionDown("left") ? 1 : 0);
+    // 键盘 + 触屏手势合并（按住左右半屏 = 方向）
+    if (!frozen) dir = (actionDown("right") ? 1 : 0) - (actionDown("left") ? 1 : 0) + touchCtl.move;
+    dir = Math.max(-1, Math.min(1, dir));
     if (dir !== 0) {
       this.vx = dir * SPEED;
       this.faceLeft = dir < 0; // 翻转贴图，点光源随之换侧
@@ -438,7 +489,7 @@ const levelScene = {
       if (frozen) this.vx = 0;
     }
     this.vy += GRAVITY * dt;
-    if (!frozen && this.onFloor && actionPressed("jump")) this.vy = JUMP_VELOCITY;
+    if (!frozen && this.onFloor && (actionPressed("jump") || touchCtl.jump)) this.vy = JUMP_VELOCITY; // 空格/↑ 或上滑手势
 
     // 动画：移动 walk / 停下 idle
     const want = dir !== 0 ? "walk" : "idle";
@@ -487,11 +538,12 @@ const levelScene = {
     this.camX = Math.min(Math.max(this.camX, CAM.minX), CAM.maxX);
     this.camY = Math.min(Math.max(this.camY, CAM.minY), CAM.maxY);
 
-    /* --- 路灯交互（light.gd：E 键点灯 → 先进入手势解密小游戏） --- */
-    if (!this.lampLit && !this.dlg.open && actionPressed("light")) {
-      const dx = this.px - this.lampX, dy = this.py - this.lampY;
-      if (Math.hypot(dx, dy) < 120) openPuzzle();
-    }
+    /* --- 路灯交互（light.gd：E 键 / 「点灯」按钮 → 先进入手势解密小游戏） --- */
+    const nearLamp = Math.hypot(this.px - this.lampX, this.py - this.lampY) < 120;
+    if (!this.lampLit && !this.dlg.open && actionPressed("light") && nearLamp) openPuzzle();
+    // 触屏设备：靠近路灯时显示右下角的「点灯」按钮
+    lightButton.classList.toggle("hidden",
+      !(isTouchDevice && nearLamp && !this.lampLit && !this.dlg.open));
     // 灯光能量缓慢升至目标值（3 秒，正弦缓动）
     if (this.lampLit && this.lampEnergy < 1.95) {
       this.lampEnergy = Math.min(1.95, this.lampEnergy + dt * (1.95 / 3));
@@ -544,12 +596,12 @@ const levelScene = {
 
     const wx = (x) => x - scrollX, wy = (y) => y - scrollY;
 
-    // 「按下 E 点灯」提示（场景树顺序：Label 在瓦片之前）
+    // 「按下 E 点灯」提示（场景树顺序：Label 在瓦片之前；触屏设备显示手势提示）
     if (!this.lampLit) {
       ctx.fillStyle = "#fff";
       ctx.font = "37px 'Microsoft YaHei', 'PingFang SC', sans-serif";
       ctx.textBaseline = "top";
-      ctx.fillText("按下“E”点灯", wx(418), wy(498));
+      ctx.fillText(isTouchDevice ? "靠近路灯，点右下角「点灯」" : "按下“E”点灯", wx(418), wy(498));
     }
 
     // 玩家（场景树顺序：player 在 TileMap 之前）
@@ -622,9 +674,18 @@ const levelScene = {
  * 按 E 打开 → 完成一个星座的解密 → 收到 postMessage → 退出 → 灯亮
  * ===================================================================== */
 const puzzleFrame = document.getElementById("puzzle-frame");
+const lightButton = document.getElementById("btn-light");
+const touchHint = document.getElementById("touch-hint");
+
+// 触屏「点灯」按钮：与 E 键等效，进入手势解密
+lightButton.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!levelScene.lampLit && !levelScene.dlg.open && !levelScene.puzzleOpen) openPuzzle();
+});
 
 function openPuzzle() {
   levelScene.puzzleOpen = true;
+  lightButton.classList.add("hidden");
   puzzleFrame.src = "puzzle/puzzle.html?t=" + Date.now(); // 每次都重新洗一盘
   puzzleFrame.classList.remove("hidden");
   puzzleFrame.onload = () => {
@@ -674,6 +735,7 @@ function loop(now) {
   // 清掉本帧的"刚按下"状态
   for (const k in pressed) pressed[k] = false;
   clickPressed = false;
+  touchCtl.jump = false;
   requestAnimationFrame(loop);
 }
 

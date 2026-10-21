@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>灯芯镇最后的灯 · Demo</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -36,8 +36,15 @@
       <div id="dlg-next">▼</div>
     </div>
 
+    <!-- 触屏控件（仅触屏设备显示；在 #ui 内随画面统一缩放） -->
+    <button id="btn-light" class="hidden">点灯</button>
+    <div id="touch-hint" class="hidden">按住左 / 右半屏移动 · 上滑跳跃 · 靠近路灯点「点灯」</div>
+
   </div>
 </div>
+
+<!-- 竖屏提示（仅触屏设备竖屏时显示） -->
+<div id="rotate-hint">↻ 建议横屏游玩，体验更佳</div>
 
 <!-- 手势解密小游戏（全屏覆盖，p5 + MediaPipe，与主游戏通过 postMessage 通信） -->
 <iframe id="puzzle-frame" class="hidden" allow="camera" title="星盘解密"></iframe>

@@ -8,6 +8,9 @@ html, body {
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;              /* 触屏只驱动画布，不触发滚动/缩放 */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #stage {
@@ -125,6 +128,54 @@ html, body {
   animation: dlgblink 1.4s infinite;
 }
 @keyframes dlgblink { 0%,100% { opacity: .9; } 50% { opacity: .15; } }
+
+/* ===== 触屏控件（虚拟坐标系内，随 #ui 缩放） ===== */
+#btn-light {
+  position: absolute;
+  left: 1010px; top: 508px;
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 200, 110, .9);
+  background: rgba(40, 26, 8, .55);
+  color: #ffd890;
+  font-size: 26px;
+  font-family: inherit;
+  letter-spacing: 4px;
+  text-indent: 4px;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 190, 90, .35), inset 0 0 18px rgba(255, 190, 90, .25);
+}
+#btn-light:active { background: rgba(90, 60, 18, .7); }
+
+#touch-hint {
+  position: absolute;
+  left: 0; right: 0; bottom: 18px;
+  text-align: center;
+  color: rgba(255, 255, 255, .65);
+  font-size: 18px;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  transition: opacity 1.2s;
+  pointer-events: none;
+}
+
+/* ===== 竖屏提示：仅触屏设备竖屏时显示 ===== */
+#rotate-hint {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; top: 14px;
+  text-align: center;
+  color: rgba(255, 220, 150, .85);
+  font-size: 15px;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  pointer-events: none;
+  z-index: 60;
+}
+@media (pointer: coarse) and (orientation: portrait) {
+  #rotate-hint { display: block; }
+}
 
 /* ===== 手势解密小游戏覆盖层 ===== */
 #puzzle-frame {
