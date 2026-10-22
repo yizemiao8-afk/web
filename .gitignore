@@ -1,0 +1,5 @@
+# 依赖与系统垃圾（本项目零依赖，仅防御性忽略）
+node_modules/
+Thumbs.db
+.DS_Store
+*.log
