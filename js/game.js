@@ -182,7 +182,7 @@ async function initGestures() {
     }
     if (!ok) throw new Error("GestureRecognizer 初始化失败");
     gestureReady = true;
-    gestureStatus.textContent = "✋ 手势控制已就绪";
+    gestureStatus.textContent = "✋ 手势控制已就绪（C 小窗 · V 调试）";
     setTimeout(() => { gestureStatus.style.opacity = 0; }, 4000);
   } catch (err) {
     console.warn("手势控制初始化失败：", err);
@@ -193,26 +193,76 @@ async function initGestures() {
 }
 
 function updateGestures() {
-  gestureMove = 0;
-  if (!gestureReady || !recognizer) return;
-  if (currentScene === levelScene && levelScene.puzzleOpen) return; // 摄像头让给星盘 iframe
-  if (camVideo.readyState < 2 || camVideo.currentTime === camLastTime) return;
+  if (!gestureReady || !recognizer) { gestureMove = 0; return; }
+  if (currentScene === levelScene && levelScene.puzzleOpen) { gestureMove = 0; return; } // 摄像头让给星盘 iframe
+  if (camVideo.readyState < 2 || camVideo.currentTime === camLastTime) return; // 无新视频帧：保持上一帧的手势方向，避免 30fps 摄像头与 60fps 游戏循环之间的走停抖动
   camLastTime = camVideo.currentTime;
   let res;
   try { res = recognizer.recognizeForVideo(camVideo, performance.now()); }
   catch (e) { return; }
+  gdFrames++; // 调试面板用：识别帧率计数
   const g = res.gestures && res.gestures[0] && res.gestures[0][0];
+  gdRawName = g ? g.categoryName : null; // 原始识别结果（含低于阈值的）
+  gdRawScore = g ? g.score : 0;
+  gdX = (res.landmarks && res.landmarks[0]) ? 1 - res.landmarks[0][9].x : null; // 中指根，镜像到玩家视角
   const name = g && g.score >= 0.65 ? g.categoryName : null;
   if (name && name !== lastMainGesture &&
       (name === "Open_Palm" || name === "Pointing_Up" || name === "Thumb_Up")) {
     gestureEvt = name;
+    gdLastEvt = { name, t: performance.now() };
   }
   lastMainGesture = name;
-  if (res.landmarks && res.landmarks[0]) {
-    const x = 1 - res.landmarks[0][9].x; // 中指根，镜像到玩家视角
-    if (x < 0.42) gestureMove = -1;
-    else if (x > 0.58) gestureMove = 1;
+  gestureMove = 0;
+  if (gdX !== null) {
+    if (gdX < 0.42) gestureMove = -1;
+    else if (gdX > 0.58) gestureMove = 1;
   }
+}
+
+/* ---------- 手势调试模式（按 V 开关）：识别手势 / 触发事件 / 位置死区条 / 识别帧率 ---------- */
+const gdEl = document.getElementById("gesture-debug");
+const gdGesture = document.getElementById("gd-gesture");
+const gdEvent = document.getElementById("gd-event");
+const gdDot = document.getElementById("gd-dot");
+const gdMoveEl = document.getElementById("gd-move");
+const gdFpsEl = document.getElementById("gd-fps");
+let gestureDebug = false;
+let gdRawName = null, gdRawScore = 0, gdX = null;
+let gdLastEvt = null; // { name, t }：最近一次边沿触发，面板上短暂高亮
+let gdFrames = 0, gdFps = 0, gdFpsT = 0;
+const GD_EMOJI = { Open_Palm: "🖐", Pointing_Up: "☝️", Thumb_Up: "👍", Thumb_Down: "👎", Closed_Fist: "✊", Victory: "✌️", ILoveYou: "🤟" };
+
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyV") {
+    gestureDebug = !gestureDebug;
+    gdEl.classList.toggle("hidden", !gestureDebug);
+  }
+});
+
+function updateGestureDebug() {
+  if (!gestureDebug) return;
+  const now = performance.now();
+  if (now - gdFpsT >= 1000) { gdFps = gdFrames; gdFrames = 0; gdFpsT = now; }
+  if (!gestureReady) {
+    gdGesture.textContent = "手势识别未就绪（看左下角状态条）";
+    gdEvent.textContent = "触发：—";
+    gdDot.style.display = "none";
+    gdMoveEl.textContent = "移动：—";
+    gdFpsEl.textContent = "识别：0 fps";
+    return;
+  }
+  const pass = gdRawScore >= 0.65; // 与正式触发同阈值，绿色 = 会生效
+  gdGesture.textContent = gdRawName
+    ? `手势：${GD_EMOJI[gdRawName] || ""} ${gdRawName} · ${gdRawScore.toFixed(2)}${pass ? "" : "（低于阈值）"}`
+    : "手势：（无手 / 未识别）";
+  gdGesture.style.color = pass ? "#9be89b" : "rgba(255,255,255,.85)";
+  gdEvent.textContent = (gdLastEvt && now - gdLastEvt.t < 700)
+    ? `触发：${GD_EMOJI[gdLastEvt.name] || ""} ${gdLastEvt.name}`
+    : "触发：—";
+  if (gdX === null) { gdDot.style.display = "none"; }
+  else { gdDot.style.display = "block"; gdDot.style.left = (gdX * 100) + "%"; }
+  gdMoveEl.textContent = gestureMove === 0 ? "移动：静止（死区）" : gestureMove < 0 ? "移动：← 左" : "移动：→ 右";
+  gdFpsEl.textContent = `识别：${gdFps} fps`;
 }
 
 // C 键：切换摄像头小窗 / 状态显隐
@@ -827,6 +877,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000 || 0.016);
   lastT = now;
   updateGestures(); // 摄像头手势采样（在场景更新前，产出 gestureEvt / gestureMove）
+  updateGestureDebug(); // 手势调试面板（按 V 开关）
   if (currentScene) {
     currentScene.update(dt);
     currentScene.draw();
