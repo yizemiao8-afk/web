@@ -599,11 +599,7 @@ function solidAt(cx, cy) { return solidSet.has(cx + "," + cy); }
 const INTRO_LINES = [
   "根据记忆里姐姐教的灯魔法，把前方的灯点亮吧",
 ];
-// 点灯成功后的剧情台词
-const DIALOGUE_LINES = [
-  "亮了……这盏灯，还认得回家的路。",
-  "镇子上最后一点火光，就由我守着吧。",
-];
+// 点灯成功后的剧情台词已移至星盘小游戏内（通关独白），主场景只保留开场指引
 
 const levelScene = {
   bgm: BGM.level,
@@ -672,7 +668,7 @@ const levelScene = {
         size: 6 + Math.random() * 10,
       });
     }
-    this.openDialogue(DIALOGUE_LINES); // 点灯成功后的剧情台词
+    // 剧情台词已在星盘小游戏中看完（postMessage 后才回到这里），回到场景即可继续操控
   },
 
   /* ----- 剧情对话（lamp_balloon.gd + lamp.dialogue） ----- */

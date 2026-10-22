@@ -3,7 +3,8 @@
 //  改编自《梦幻星空 · 星座法阵》：
 //    · 去掉主菜单，打开即进入星空（摄像头授权后直接开始）
 //    · 每局只解一关：🖐 召唤星盘 → 拧动对齐 → 🤏 捏合显现本关星座
-//    · 星座完全显现后向主页面发 postMessage('puzzle-solved')，退出并点灯
+//    · 星座完全显现后弹出烬的通关独白（🖐 张开手掌逐句推进），
+//      说完最后一句才向主页面发 postMessage('puzzle-solved')，退出并点灯
 //    · ESC 打开 / 关闭手势教程页（也可由主页面转发 ESC）
 //  PART A 是手势识别引擎，不要修改。
 // =====================================================================
@@ -150,6 +151,16 @@ let exitAt = 0;        // 星座完全显现的时刻（帧数），稍后退出
 let lastGesture = {};
 let lastPinch = {};
 let showInfo = false;
+let dlgPortraitImg = null; // 通关对话立绘（preload 里加载）
+
+// ---------- 通关对话（星座汇聚后弹出，🖐 张开手掌逐句推进，说完最后一句才返回场景） ----------
+const PUZZLE_DIALOGUE = [
+  "这下应该就好了",
+  "亮了……这盏灯，还认得回家的路。",
+  "镇子上最后一点火光，就由我守着吧。",
+];
+let dlgOpen = false;
+let dlgLine = 0;
 
 const ZODIAC_GLYPHS = ["♈︎", "♉︎", "♊︎", "♋︎", "♌︎", "♍︎", "♎︎", "♏︎", "♐︎", "♑︎", "♒︎", "♓︎"];
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
@@ -185,6 +196,7 @@ function preload() {
   bgImg.f10 = loadImage("bg/f10.webp");
   bgImg.f13 = loadImage("bg/f13.webp");
   bgImg.leak = loadImage("bg/leak.webp");
+  dlgPortraitImg = loadImage("../assets/portrait/jin_calm.webp"); // 通关对话立绘：烬·平静闭眼
 }
 
 function setup() {
@@ -305,11 +317,14 @@ function draw() {
     updateHands();
     for (const hand of hands) {
       const g = hand.score >= 0.6 ? hand.gesture : "None";
-      if (g !== "None" && g !== lastGesture[hand.side]) onGesture(g, hand);
+      if (dlgOpen) {
+        // 对话中：🖐 张开手掌 = 继续下一句，其余手势不触发游戏行为
+        if (g === "Open_Palm" && g !== lastGesture[hand.side]) advanceDlg();
+      } else if (g !== "None" && g !== lastGesture[hand.side]) onGesture(g, hand);
       if (g !== "None" || lastGesture[hand.side] !== undefined) lastGesture[hand.side] = g;
 
       const pinch = handPinching(hand);
-      if (pinch && !lastPinch[hand.side]) onPinch(hand);
+      if (!dlgOpen && pinch && !lastPinch[hand.side]) onPinch(hand);
       lastPinch[hand.side] = pinch;
     }
     if (hands.length === 0) { lastGesture = {}; lastPinch = {}; }
@@ -361,17 +376,16 @@ function draw() {
       textAlign(CENTER, CENTER);
       text(`${z.name} · ${z.latin}`, width / 2, height - 32);
     }
-    // 星座完全显现：稍停片刻，通知主页面退出并点灯
-    if (summoned && z.alpha >= 1 && !exitSent) {
+    // 星座完全显现：稍停片刻，弹出烬的通关对话（🖐 张开手掌逐句推进）
+    if (summoned && z.alpha >= 1 && !dlgOpen && !exitSent) {
       if (!exitAt) {
         exitAt = frameCount;
-        setStatus(`「${z.name}」已显现 ✨ 灯火即将亮起…`);
+        setStatus(`「${z.name}」已显现 ✨`);
       }
-      if (frameCount > exitAt + 90) { // 约 1.5 秒后退出
-        exitSent = true;
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage("puzzle-solved", "*");
-        }
+      if (frameCount > exitAt + 60) { // 约 1 秒后进入对话
+        dlgOpen = true;
+        dlgLine = 0;
+        setStatus("🖐 张开手掌继续对话");
       }
     }
   }
@@ -384,6 +398,89 @@ function draw() {
       circle(hand.points[8].x, hand.points[8].y, 10);
     }
     if (showInfo) drawGestureInfo();
+  }
+
+  // 7. 常驻操作指引：所有操作要求直接显示在画面里（星座显现 / 对话时隐藏）
+  if (started && !summoned) drawGuide();
+
+  // 8. 通关对话（盖在最上层）
+  if (dlgOpen) drawDlg();
+}
+
+// 常驻操作指引（底部中央）：完整流程 + 辅助按键
+function drawGuide() {
+  push();
+  textFont("'Songti SC', 'STSong', 'SimSun', 'Microsoft YaHei', serif");
+  textAlign(CENTER, BOTTOM);
+  noStroke();
+  rectMode(CENTER);
+  fill(5, 18, 46, 130); // 淡底带，保证在星空上可读
+  rect(width / 2, height - 52, min(width - 40, 880), 56, 10);
+  fill(255, 224, 150, 235);
+  textSize(17);
+  text("🖐 张开手掌召唤星盘 → 🌀 拧动手掌对齐星座 → 🤏 捏合显现星座", width / 2, height - 56);
+  fill(220, 232, 255, 150);
+  textSize(13);
+  text("☝️ 食指向上点亮引导星 · ESC 手势教程 · V 摄像头画面 · I 手势信息", width / 2, height - 30);
+  pop();
+}
+
+// 通关对话：底部渐变暗带 + 烬·平静闭眼立绘 + 闪烁的「🖐 张开手掌继续」
+function drawDlg() {
+  push();
+  const bandH = height * 0.36;
+  const y0 = height - bandH;
+  const grad = drawingContext.createLinearGradient(0, y0, 0, height);
+  grad.addColorStop(0, "rgba(2, 4, 14, 0)");
+  grad.addColorStop(0.45, "rgba(2, 4, 14, 0.72)");
+  grad.addColorStop(1, "rgba(2, 4, 14, 0.94)");
+  drawingContext.fillStyle = grad;
+  drawingContext.fillRect(0, y0, width, bandH);
+
+  textFont("'Songti SC', 'STSong', 'SimSun', 'Microsoft YaHei', serif");
+  noStroke();
+
+  // 立绘（左下，底部对齐，保比例）
+  let textX = width * 0.06;
+  if (dlgPortraitImg && dlgPortraitImg.width > 1) {
+    const ph = height * 0.68;
+    const pw = ph * (dlgPortraitImg.width / dlgPortraitImg.height);
+    imageMode(CORNER);
+    image(dlgPortraitImg, width * 0.035, height - ph, pw, ph);
+    textX = width * 0.035 + pw + width * 0.03;
+  }
+
+  // 名字 + 台词
+  textAlign(LEFT, TOP);
+  fill(148, 227, 222);
+  textSize(min(32, width * 0.02 + 14));
+  textStyle(BOLD);
+  text("烬", textX, y0 + bandH * 0.16);
+  textStyle(NORMAL);
+  fill(255);
+  textSize(min(26, width * 0.016 + 12));
+  text(PUZZLE_DIALOGUE[dlgLine], textX, y0 + bandH * 0.16 + 52, width - textX - width * 0.06);
+
+  // 闪烁提示
+  const blink = 150 + 105 * sin(frameCount * 0.1);
+  textAlign(RIGHT, BOTTOM);
+  textSize(18);
+  fill(255, 224, 150, blink);
+  text("🖐 张开手掌继续 ▼", width - 30, height - 22);
+  pop();
+}
+
+// 推进对话；说完最后一句 → 通知主页面：退出星盘，点亮路灯
+function advanceDlg() {
+  if (!dlgOpen) return;
+  dlgLine++;
+  if (dlgLine >= PUZZLE_DIALOGUE.length) {
+    dlgOpen = false;
+    exitSent = true;
+    setStatus("返回灯芯镇，灯火亮起…");
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage("puzzle-solved", "*");
+    }
   }
 }
 
@@ -873,8 +970,15 @@ function handTwistDelta() {
 
 function keyPressed() {
   if (keyCode === 27) { toggleTutorial(); return false; } // ESC：教程页
+  // 对话中的键盘兜底：Enter / 空格 / E 也能推进（🖐 手势为主）
+  if (dlgOpen && (keyCode === ENTER || keyCode === 32 || key === "e" || key === "E")) { advanceDlg(); return false; }
   if (key === "v" || key === "V") showCamera = !showCamera;
   if (key === "i" || key === "I") showInfo = !showInfo;
+}
+
+// 没有摄像头时：点击画面也能推进对话
+function mousePressed() {
+  if (dlgOpen) advanceDlg();
 }
 
 function windowResized() {
