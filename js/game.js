@@ -595,6 +595,11 @@ const solidSet = new Set();
 for (const t of window.TILE_DATA.tiles) if (t.solid) solidSet.add(t.x + "," + t.y);
 function solidAt(cx, cy) { return solidSet.has(cx + "," + cy); }
 
+// 开场指引（过完 CG 进入关卡即弹出）
+const INTRO_LINES = [
+  "根据记忆里姐姐教的灯魔法，把前方的灯点亮吧",
+];
+// 点灯成功后的剧情台词
 const DIALOGUE_LINES = [
   "亮了……这盏灯，还认得回家的路。",
   "镇子上最后一点火光，就由我守着吧。",
@@ -607,6 +612,7 @@ const levelScene = {
   px: 136, py: 495, vx: 0, vy: 0, onFloor: false, faceLeft: false,
   animTime: 0, anim: "idle",
   camX: 576, camY: 326,
+  time: 0, // 关卡内累计时间（驱动提示文字闪烁）
   // 路灯状态（对应 light.gd）
   lampLit: false, lampEnergy: 0, lampX: 763, lampY: 461,
   // 手势解密小游戏
@@ -632,7 +638,13 @@ const levelScene = {
     puzzleFrame.classList.add("hidden");
     this.burst = null; this.sparks = [];
     this.dlg.open = false;
-    // 所有设备：进入关卡时短暂显示操作提示（摄像头手势为主，键盘 / 触屏兜底）
+    this.time = 0;
+    // 过完 CG 进入关卡：立即弹出开场指引对话（对话结束后再显示操作提示，避免重叠）
+    this.openDialogue(INTRO_LINES);
+  },
+
+  // 操作提示：底部短暂显示 8 秒（摄像头手势为主，键盘 / 触屏兜底）
+  showCtrlHint() {
     const ctrlLine = isTouchDevice
       ? "触屏：按住左 / 右半屏移动 · 上滑跳跃 · 靠近路灯点「点灯」"
       : "键盘：A / D 或 ← / → 移动 · 空格 / W 跳跃 · E 点灯";
@@ -660,12 +672,12 @@ const levelScene = {
         size: 6 + Math.random() * 10,
       });
     }
-    this.openDialogue();
+    this.openDialogue(DIALOGUE_LINES); // 点灯成功后的剧情台词
   },
 
   /* ----- 剧情对话（lamp_balloon.gd + lamp.dialogue） ----- */
-  openDialogue() {
-    this.dlg = { open: true, line: 0, chars: 0, typing: true, waitInput: false };
+  openDialogue(lines) {
+    this.dlg = { open: true, lines, line: 0, chars: 0, typing: true, waitInput: false };
     showLayer("dialogue");
     const nameEl = document.getElementById("dlg-name");
     const textEl = document.getElementById("dlg-text");
@@ -681,16 +693,21 @@ const levelScene = {
   advanceDialogue() {
     const d = this.dlg;
     if (!d.open) return;
-    if (d.typing) { d.chars = DIALOGUE_LINES[d.line].length; d.typing = false; return; } // 先补完
+    if (d.typing) { d.chars = d.lines[d.line].length; d.typing = false; return; } // 先补完
     if (!d.waitInput) return;
     d.line++;
-    if (d.line >= DIALOGUE_LINES.length) { d.open = false; showLayer(null); return; }
+    if (d.line >= d.lines.length) {
+      d.open = false; showLayer(null);
+      if (d.lines === INTRO_LINES) this.showCtrlHint(); // 开场指引结束 → 显示操作提示
+      return;
+    }
     d.chars = 0; d.typing = true; d.waitInput = false;
     document.getElementById("dlg-next").style.visibility = "hidden";
   },
 
   update(dt) {
     if (this.puzzleOpen) return; // 解密小游戏进行中：游戏世界冻结
+    this.time += dt; // 驱动提示文字闪烁
     /* --- 玩家物理（player.gd） --- */
     const frozen = this.dlg.open;
     let dir = 0;
@@ -784,14 +801,14 @@ const levelScene = {
     const d = this.dlg;
     if (d.open) {
       if (d.typing) {
-        d.chars = Math.min(DIALOGUE_LINES[d.line].length, d.chars + dt * 24);
-        if (d.chars >= DIALOGUE_LINES[d.line].length) {
+        d.chars = Math.min(d.lines[d.line].length, d.chars + dt * 24);
+        if (d.chars >= d.lines[d.line].length) {
           d.typing = false; d.waitInput = true;
           document.getElementById("dlg-next").style.visibility = "visible";
         }
       }
       document.getElementById("dlg-text").textContent =
-        DIALOGUE_LINES[d.line].slice(0, Math.floor(d.chars));
+        d.lines[d.line].slice(0, Math.floor(d.chars));
       if (clickPressed || actionPressed("light") || pressed["Enter"] || gestureEvt === "Open_Palm") this.advanceDialogue();
     }
   },
@@ -818,12 +835,19 @@ const levelScene = {
 
     const wx = (x) => x - scrollX, wy = (y) => y - scrollY;
 
-    // 点灯提示（场景树顺序：Label 在瓦片之前；👍 手势为主，按键 / 按钮兜底）
-    if (!this.lampLit) {
+    // 点灯提示：悬浮在路灯头顶，与其他提示一样闪烁；玩家打开星盘（交互）后消失
+    if (!this.lampLit && !this.puzzleOpen) {
+      ctx.save();
+      ctx.globalAlpha = 0.65 + 0.35 * Math.sin(this.time * Math.PI); // 2 秒周期 0.3~1，与 UI 的 blink 动画一致
       ctx.fillStyle = "#fff";
       ctx.font = "32px 'Microsoft YaHei', 'PingFang SC', sans-serif";
-      ctx.textBaseline = "top";
-      ctx.fillText(isTouchDevice ? "👍 拇指向上点灯（或点右下角按钮）" : "👍 拇指向上点灯（或按 E）", wx(418), wy(498));
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.shadowColor = "rgba(255, 216, 144, .9)"; // 暖色辉光，呼应灯光主题
+      ctx.shadowBlur = 12;
+      ctx.fillText(isTouchDevice ? "👍 拇指向上点灯（或点右下角按钮）" : "👍 拇指向上点灯（或按 E）",
+        wx(this.lampX + 24), wy(this.lampY - 170)); // 灯杆头顶上方
+      ctx.restore();
     }
 
     // 玩家（场景树顺序：player 在 TileMap 之前）
