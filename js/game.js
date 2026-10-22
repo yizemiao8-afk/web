@@ -157,7 +157,7 @@ let gestureMove = 0;          // -1 / 0 / 1，持续移动方向
 let lastMainGesture = null;   // 边沿检测：手势变化时才触发一次
 let camLastTime = -1;
 
-let visionLib = null, visionFileset = null;
+let visionLib = null, visionFileset = null, visionBase = null, visionModel = null;
 let recogFailCount = 0; // 连续识别失败计数：GPU 模式不稳定时自动切 CPU
 
 function gestureFail(msg, err) {
@@ -193,29 +193,52 @@ async function initGestures() {
     if (name === "NotReadableError" || name === "AbortError") return gestureFail("⚠ 摄像头正被其他程序占用，关闭后重试", err);
     return gestureFail("⚠ 摄像头启动失败（" + (name || err) + "）", err);
   }
-  // 第二步：手势模型（本地文件，GPU 失败退回 CPU）
+  // 第二步：手势模型（与星盘小游戏同源策略：本地优先，失败走 CDN；GPU 失败退回 CPU）
+  const MP_VERSION = "0.10.21";
+  const MP_BASES = [
+    "./puzzle/lib/tasks-vision",
+    `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files`,
+    `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`,
+  ];
+  const MODELS = [
+    "./puzzle/gesture_recognizer.task",
+    "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+  ];
   try {
     gestureStatus.textContent = "🧠 手势模型加载中…";
-    if (!visionLib) visionLib = await import("./puzzle/lib/tasks-vision/vision_bundle.mjs");
-    if (!visionFileset) visionFileset = await visionLib.FilesetResolver.forVisionTasks("./puzzle/lib/tasks-vision/wasm");
-    let ok = false;
-    for (const delegate of ["GPU", "CPU"]) { // 有的电脑不能用 GPU，退回 CPU
-      try {
-        recognizer = await visionLib.GestureRecognizer.createFromOptions(visionFileset, {
-          baseOptions: { modelAssetPath: "./puzzle/gesture_recognizer.task", delegate },
-          runningMode: "VIDEO",
-          numHands: 1,
-        });
-        ok = true; break;
-      } catch (e) { console.warn("手势模型", delegate, "模式加载失败：", e); }
+    recognizer = null;
+    let lastErr = null;
+    outer:
+    for (const base of MP_BASES) {
+      if (visionBase !== base) { // 换一个来源时重新加载运行时（wasm）
+        try {
+          visionLib = await import(`${base}/vision_bundle.mjs`);
+          visionFileset = await visionLib.FilesetResolver.forVisionTasks(`${base}/wasm`);
+          visionBase = base;
+        } catch (e) { console.warn("手势运行时来源打不开：", base, e); lastErr = e; continue; }
+      }
+      for (const model of MODELS) {
+        for (const delegate of ["GPU", "CPU"]) { // 有的电脑不能用 GPU，退回 CPU
+          try {
+            recognizer = await visionLib.GestureRecognizer.createFromOptions(visionFileset, {
+              baseOptions: { modelAssetPath: model, delegate },
+              runningMode: "VIDEO",
+              numHands: 1,
+            });
+            visionModel = model;
+            break outer; // 成功！
+          } catch (e) { console.warn("手势模型加载失败（", delegate, "）：", e); lastErr = e; }
+        }
+      }
     }
-    if (!ok) throw new Error("GPU 和 CPU 模式都加载失败");
+    if (!recognizer) throw lastErr || new Error("所有来源都加载失败");
     gestureReady = true;
     recogFailCount = 0;
     gestureStatus.textContent = "✋ 手势控制已就绪（C 小窗 · V 调试）";
     setTimeout(() => { gestureStatus.style.opacity = 0; }, 4000);
   } catch (err) {
-    gestureFail("⚠ 手势模型加载失败，可用键盘 / 触屏游玩", err);
+    const short = (err && err.message ? err.message : String(err)).slice(0, 50);
+    gestureFail("⚠ 手势模型加载失败：" + short, err);
   }
 }
 
@@ -228,7 +251,7 @@ async function rebuildRecognizerCPU() {
   if (!visionFileset) return;
   try {
     const r = await visionLib.GestureRecognizer.createFromOptions(visionFileset, {
-      baseOptions: { modelAssetPath: "./puzzle/gesture_recognizer.task", delegate: "CPU" },
+      baseOptions: { modelAssetPath: visionModel || "./puzzle/gesture_recognizer.task", delegate: "CPU" },
       runningMode: "VIDEO",
       numHands: 1,
     });
