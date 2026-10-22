@@ -3,3 +3,6 @@ node_modules/
 Thumbs.db
 .DS_Store
 *.log
+
+# 本地预览配置：不进仓库，GitHub 上保持纯 html/css/js
+package.json

@@ -195,10 +195,12 @@ async function initGestures() {
   }
   // 第二步：手势模型（与星盘小游戏同源策略：本地优先，失败走 CDN；GPU 失败退回 CPU）
   const MP_VERSION = "0.10.21";
-  const MP_BASES = [
-    "./puzzle/lib/tasks-vision",
-    `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files`,
-    `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`,
+  const MP_SOURCES = [
+    { lib: "./puzzle/lib/tasks-vision/vision_bundle.js", wasm: "./puzzle/lib/tasks-vision/wasm" },
+    { lib: `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files/vision_bundle.mjs`,
+      wasm: `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files/wasm` },
+    { lib: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/vision_bundle.mjs`,
+      wasm: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm` },
   ];
   const MODELS = [
     "./puzzle/gesture_recognizer.task",
@@ -209,13 +211,13 @@ async function initGestures() {
     recognizer = null;
     let lastErr = null;
     outer:
-    for (const base of MP_BASES) {
-      if (visionBase !== base) { // 换一个来源时重新加载运行时（wasm）
+    for (const src of MP_SOURCES) {
+      if (visionBase !== src.lib) { // 换一个来源时重新加载运行时（wasm）
         try {
-          visionLib = await import(`${base}/vision_bundle.mjs`);
-          visionFileset = await visionLib.FilesetResolver.forVisionTasks(`${base}/wasm`);
-          visionBase = base;
-        } catch (e) { console.warn("手势运行时来源打不开：", base, e); lastErr = e; continue; }
+          visionLib = await import(src.lib);
+          visionFileset = await visionLib.FilesetResolver.forVisionTasks(src.wasm);
+          visionBase = src.lib;
+        } catch (e) { console.warn("手势运行时来源打不开：", src.lib, e); lastErr = e; continue; }
       }
       for (const model of MODELS) {
         for (const delegate of ["GPU", "CPU"]) { // 有的电脑不能用 GPU，退回 CPU

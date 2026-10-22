@@ -1,9 +1,0 @@
-{
-  "name": "wicktown-last-lamp-web",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "node dev-server.mjs"
-  }
-}

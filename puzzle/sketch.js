@@ -15,10 +15,12 @@
 // ---------------------------------------------------------------------
 const MP_VERSION = "0.10.21";
 // MediaPipe 运行时：优先项目内置的本地文件（离线可用），失败再试 CDN
-const MP_URLS = [
-  "./lib/tasks-vision",
-  `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files`,
-  `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`,
+const MP_SOURCES = [
+  { lib: "./lib/tasks-vision/vision_bundle.js", wasm: "./lib/tasks-vision/wasm" },
+  { lib: `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files/vision_bundle.mjs`,
+    wasm: `https://registry.npmmirror.com/@mediapipe/tasks-vision/${MP_VERSION}/files/wasm` },
+  { lib: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/vision_bundle.mjs`,
+    wasm: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm` },
 ];
 // 手势模型：项目文件夹里的 gesture_recognizer.task，兜底再从 Google 下载
 const MODEL_URLS = [
@@ -47,11 +49,11 @@ let showCamera = false;
 
 async function loadGestureRecognizer() {
   setStatus("正在加载手势模型…");
-  for (const base of MP_URLS) {
+  for (const src of MP_SOURCES) {
     let vision, fileset;
     try {
-      vision = await import(`${base}/vision_bundle.mjs`);
-      fileset = await vision.FilesetResolver.forVisionTasks(`${base}/wasm`);
+      vision = await import(src.lib);
+      fileset = await vision.FilesetResolver.forVisionTasks(src.wasm);
     } catch (e) {
       continue; // 这个来源打不开，换下一个
     }
