@@ -165,7 +165,8 @@ html, body {
   letter-spacing: 1px;
   text-shadow: 0 1px 3px rgba(0,0,0,.8);
   transition: opacity .8s;
-  pointer-events: none;
+  pointer-events: auto;   /* 失败时可点击重试 */
+  cursor: pointer;
 }
 
 /* ===== 手势调试面板（按 V 开关） ===== */

@@ -157,39 +157,88 @@ let gestureMove = 0;          // -1 / 0 / 1，持续移动方向
 let lastMainGesture = null;   // 边沿检测：手势变化时才触发一次
 let camLastTime = -1;
 
+let visionLib = null, visionFileset = null;
+let recogFailCount = 0; // 连续识别失败计数：GPU 模式不稳定时自动切 CPU
+
+function gestureFail(msg, err) {
+  if (err) console.warn("手势控制：", msg, err);
+  gestureReady = false;
+  gestureStatus.style.opacity = 1; // 失败信息不淡出，留给用户看
+  gestureStatus.textContent = msg + "（点此处重试）";
+  camVideo.classList.add("hidden");
+}
+
 async function initGestures() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  if (location.protocol === "file:") {
+    return gestureFail("⚠ 请从预览链接（localhost）打开游戏：直接双击 html 无法加载手势模块");
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return gestureFail("⚠ 当前环境不支持摄像头（需用 localhost 或 https 打开）");
+  }
+  // 第一步：摄像头
   try {
+    gestureStatus.style.opacity = 1;
     gestureStatus.textContent = "📷 正在请求摄像头权限…";
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 320, height: 240, facingMode: "user" }, audio: false,
     });
     camVideo.srcObject = stream;
     await camVideo.play().catch(() => {});
+    stream.getVideoTracks()[0].addEventListener("ended", () => gestureFail("⚠ 摄像头已断开"));
+    camVideo.classList.remove("hidden");
+  } catch (err) {
+    const name = err && err.name;
+    if (name === "NotAllowedError") return gestureFail("⚠ 摄像头权限被拒绝：点地址栏左侧图标允许摄像头，然后刷新", err);
+    if (name === "NotFoundError" || name === "OverconstrainedError") return gestureFail("⚠ 没有检测到摄像头设备，手势控制不可用", err);
+    if (name === "NotReadableError" || name === "AbortError") return gestureFail("⚠ 摄像头正被其他程序占用，关闭后重试", err);
+    return gestureFail("⚠ 摄像头启动失败（" + (name || err) + "）", err);
+  }
+  // 第二步：手势模型（本地文件，GPU 失败退回 CPU）
+  try {
     gestureStatus.textContent = "🧠 手势模型加载中…";
-    const vision = await import("./puzzle/lib/tasks-vision/vision_bundle.mjs");
-    const fileset = await vision.FilesetResolver.forVisionTasks("./puzzle/lib/tasks-vision/wasm");
+    if (!visionLib) visionLib = await import("./puzzle/lib/tasks-vision/vision_bundle.mjs");
+    if (!visionFileset) visionFileset = await visionLib.FilesetResolver.forVisionTasks("./puzzle/lib/tasks-vision/wasm");
     let ok = false;
     for (const delegate of ["GPU", "CPU"]) { // 有的电脑不能用 GPU，退回 CPU
       try {
-        recognizer = await vision.GestureRecognizer.createFromOptions(fileset, {
+        recognizer = await visionLib.GestureRecognizer.createFromOptions(visionFileset, {
           baseOptions: { modelAssetPath: "./puzzle/gesture_recognizer.task", delegate },
           runningMode: "VIDEO",
           numHands: 1,
         });
         ok = true; break;
-      } catch (e) { /* 换下一个 delegate */ }
+      } catch (e) { console.warn("手势模型", delegate, "模式加载失败：", e); }
     }
-    if (!ok) throw new Error("GestureRecognizer 初始化失败");
+    if (!ok) throw new Error("GPU 和 CPU 模式都加载失败");
     gestureReady = true;
+    recogFailCount = 0;
     gestureStatus.textContent = "✋ 手势控制已就绪（C 小窗 · V 调试）";
     setTimeout(() => { gestureStatus.style.opacity = 0; }, 4000);
   } catch (err) {
-    console.warn("手势控制初始化失败：", err);
-    gestureStatus.textContent = "⚠ 手势控制不可用，可用键盘 / 触屏游玩";
-    camVideo.classList.add("hidden");
-    setTimeout(() => { gestureStatus.style.opacity = 0; }, 6000);
+    gestureFail("⚠ 手势模型加载失败，可用键盘 / 触屏游玩", err);
   }
+}
+
+// 状态条可点击：失败后点击重试（并阻止冒泡，避免误触菜单的"点击开始"）
+gestureStatus.addEventListener("pointerdown", (e) => e.stopPropagation());
+gestureStatus.addEventListener("click", () => { if (!gestureReady) initGestures(); });
+
+// GPU 推理持续失败时，自动用 CPU 重建识别器
+async function rebuildRecognizerCPU() {
+  if (!visionFileset) return;
+  try {
+    const r = await visionLib.GestureRecognizer.createFromOptions(visionFileset, {
+      baseOptions: { modelAssetPath: "./puzzle/gesture_recognizer.task", delegate: "CPU" },
+      runningMode: "VIDEO",
+      numHands: 1,
+    });
+    if (recognizer && recognizer.close) try { recognizer.close(); } catch (e) {}
+    recognizer = r;
+    recogFailCount = 0;
+    gestureStatus.style.opacity = 1;
+    gestureStatus.textContent = "✋ 手势识别已切换到 CPU 模式";
+    setTimeout(() => { gestureStatus.style.opacity = 0; }, 3000);
+  } catch (e) { console.warn("CPU 重建手势识别器失败：", e); }
 }
 
 function updateGestures() {
@@ -198,8 +247,11 @@ function updateGestures() {
   if (camVideo.readyState < 2 || camVideo.currentTime === camLastTime) return; // 无新视频帧：保持上一帧的手势方向，避免 30fps 摄像头与 60fps 游戏循环之间的走停抖动
   camLastTime = camVideo.currentTime;
   let res;
-  try { res = recognizer.recognizeForVideo(camVideo, performance.now()); }
-  catch (e) { return; }
+  try { res = recognizer.recognizeForVideo(camVideo, performance.now()); recogFailCount = 0; }
+  catch (e) {
+    if (++recogFailCount === 30) rebuildRecognizerCPU(); // 连续失败约 1 秒：GPU 推理不稳，自动切 CPU
+    return;
+  }
   gdFrames++; // 调试面板用：识别帧率计数
   const g = res.gestures && res.gestures[0] && res.gestures[0][0];
   gdRawName = g ? g.categoryName : null; // 原始识别结果（含低于阈值的）
