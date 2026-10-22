@@ -37,33 +37,17 @@ html, body {
 .layer { position: absolute; inset: 0; }
 .hidden { display: none !important; }
 
-/* ===== 开始菜单按钮（Godot flat Button 复刻） ===== */
-.menu-btn {
+/* ===== 开始菜单：单行闪烁手势提示（唯一入口） ===== */
+#menu-start-hint {
   position: absolute;
-  pointer-events: auto;
-  background: transparent;
-  border: none;
-  color: #e8e8e8;
-  font-size: 22px;
-  font-family: inherit;
-  text-align: left;
-  padding-left: 8px;
-  cursor: pointer;
-  transition: color .15s, text-shadow .15s;
-}
-.menu-btn:hover {
+  left: 640px; top: 352px;
+  width: 440px;
+  text-align: center;
   color: #ffd890;
-  text-shadow: 0 0 12px rgba(255, 200, 120, .8);
-}
-
-#menu-toast {
-  position: absolute;
-  left: 50%; top: 500px;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,.75);
-  font-size: 18px;
+  font-size: 26px;
   letter-spacing: 2px;
-  transition: opacity .4s;
+  text-shadow: 0 0 14px rgba(255, 200, 120, .65);
+  animation: blink 2s infinite;
 }
 
 /* ===== 开场 CG 字幕 ===== */
@@ -154,9 +138,33 @@ html, body {
   text-align: center;
   color: rgba(255, 255, 255, .65);
   font-size: 18px;
+  line-height: 1.7;
   letter-spacing: 1px;
   text-shadow: 0 1px 3px rgba(0,0,0,.8);
   transition: opacity 1.2s;
+  pointer-events: none;
+}
+
+/* ===== 摄像头手势控制：小窗预览 + 状态提示 ===== */
+#cam-preview {
+  position: absolute;
+  left: 16px; top: 508px;
+  width: 160px; height: 120px;
+  transform: scaleX(-1);          /* 镜像显示，与体感方向一致 */
+  opacity: .55;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #101018;
+  pointer-events: none;
+}
+#gesture-status {
+  position: absolute;
+  left: 18px; top: 486px;
+  color: rgba(255, 255, 255, .6);
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  transition: opacity .8s;
   pointer-events: none;
 }
 

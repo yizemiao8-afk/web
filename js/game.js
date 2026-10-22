@@ -141,6 +141,88 @@ function endTouchPointer(e) {
 window.addEventListener("pointerup", endTouchPointer);
 window.addEventListener("pointercancel", endTouchPointer);
 
+/* ---------- 摄像头手势控制（MediaPipe GestureRecognizer，复用星盘小游戏的本地模型） ----------
+ * 与键盘 / 触屏并存的第三条输入通道：
+ *   🖐 Open_Palm（边沿）   → 菜单开始 / CG 下一张 / 对话推进
+ *   手掌左右位置（镜像后） → 关卡移动：画面左 1/3 左移，右 1/3 右移，中间死区
+ *   ☝️ Pointing_Up（边沿） → 跳跃
+ *   👍 Thumb_Up（边沿）    → 靠近路灯时打开星盘解密
+ * 按 C 切换摄像头小窗显隐。星盘小游戏打开期间主页面暂停识别（摄像头让给 iframe）。 */
+const camVideo = document.getElementById("cam-preview");
+const gestureStatus = document.getElementById("gesture-status");
+let recognizer = null;
+let gestureReady = false;
+let gestureEvt = null;        // 本帧刚出现的手势名（边沿触发），主循环末尾清除
+let gestureMove = 0;          // -1 / 0 / 1，持续移动方向
+let lastMainGesture = null;   // 边沿检测：手势变化时才触发一次
+let camLastTime = -1;
+
+async function initGestures() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  try {
+    gestureStatus.textContent = "📷 正在请求摄像头权限…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 320, height: 240, facingMode: "user" }, audio: false,
+    });
+    camVideo.srcObject = stream;
+    await camVideo.play().catch(() => {});
+    gestureStatus.textContent = "🧠 手势模型加载中…";
+    const vision = await import("./puzzle/lib/tasks-vision/vision_bundle.mjs");
+    const fileset = await vision.FilesetResolver.forVisionTasks("./puzzle/lib/tasks-vision/wasm");
+    let ok = false;
+    for (const delegate of ["GPU", "CPU"]) { // 有的电脑不能用 GPU，退回 CPU
+      try {
+        recognizer = await vision.GestureRecognizer.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "./puzzle/gesture_recognizer.task", delegate },
+          runningMode: "VIDEO",
+          numHands: 1,
+        });
+        ok = true; break;
+      } catch (e) { /* 换下一个 delegate */ }
+    }
+    if (!ok) throw new Error("GestureRecognizer 初始化失败");
+    gestureReady = true;
+    gestureStatus.textContent = "✋ 手势控制已就绪";
+    setTimeout(() => { gestureStatus.style.opacity = 0; }, 4000);
+  } catch (err) {
+    console.warn("手势控制初始化失败：", err);
+    gestureStatus.textContent = "⚠ 手势控制不可用，可用键盘 / 触屏游玩";
+    camVideo.classList.add("hidden");
+    setTimeout(() => { gestureStatus.style.opacity = 0; }, 6000);
+  }
+}
+
+function updateGestures() {
+  gestureMove = 0;
+  if (!gestureReady || !recognizer) return;
+  if (currentScene === levelScene && levelScene.puzzleOpen) return; // 摄像头让给星盘 iframe
+  if (camVideo.readyState < 2 || camVideo.currentTime === camLastTime) return;
+  camLastTime = camVideo.currentTime;
+  let res;
+  try { res = recognizer.recognizeForVideo(camVideo, performance.now()); }
+  catch (e) { return; }
+  const g = res.gestures && res.gestures[0] && res.gestures[0][0];
+  const name = g && g.score >= 0.65 ? g.categoryName : null;
+  if (name && name !== lastMainGesture &&
+      (name === "Open_Palm" || name === "Pointing_Up" || name === "Thumb_Up")) {
+    gestureEvt = name;
+  }
+  lastMainGesture = name;
+  if (res.landmarks && res.landmarks[0]) {
+    const x = 1 - res.landmarks[0][9].x; // 中指根，镜像到玩家视角
+    if (x < 0.42) gestureMove = -1;
+    else if (x > 0.58) gestureMove = 1;
+  }
+}
+
+// C 键：切换摄像头小窗 / 状态显隐
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyC") {
+    camVideo.classList.toggle("hidden");
+    gestureStatus.classList.toggle("hidden");
+  }
+});
+
 /* ---------- 缓动 ---------- */
 const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
@@ -223,6 +305,8 @@ const menuScene = {
       p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.y < -60 || p.x > VW + 60) this.embers[i] = this.newEmber(false);
     }
+    // 🖐 张开手掌（或点击画面任意处）开始游戏
+    if (gestureEvt === "Open_Palm" || clickPressed) this.startGame();
     if (this.fading) {
       this.fade = Math.min(1, this.fade + dt / 0.8);
       BGM.menu.volume = Math.max(0, 1 - this.fade);
@@ -232,7 +316,7 @@ const menuScene = {
   startGame() {
     if (this.fading) return;
     this.fading = true;
-    showLayer(null); // 锁按钮
+    showLayer(null); // 隐藏提示行，进入过场
   },
   draw() {
     // 背景动画：1280×720 帧，缩放 0.9008×0.9125，中心 (576.5, 329.5)
@@ -267,16 +351,6 @@ const menuScene = {
     if (this.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${this.fade})`; ctx.fillRect(0, 0, VW, VH); }
   },
 };
-document.getElementById("btn-play").addEventListener("click", () => menuScene.startGame());
-function menuStub() {
-  const t = document.getElementById("menu-toast");
-  t.classList.remove("hidden");
-  t.style.opacity = 1;
-  clearTimeout(menuStub._t);
-  menuStub._t = setTimeout(() => { t.style.opacity = 0; }, 1400);
-}
-document.getElementById("btn-continue").addEventListener("click", menuStub);
-document.getElementById("btn-settings").addEventListener("click", menuStub);
 
 /* =====================================================================
  * 场景二：开场 CG（opening_cg.tscn / opening_cg.gd）
@@ -290,7 +364,7 @@ const CG_DATA = [
   { img: "cg5", motion: "static",   subtitle: "可是三个月前，镇上的灯火开始一盏接一盏地熄灭。灯灭的地方，时间慢了下来，最后停格在黄昏。" },
   { img: "cg6", motion: "static",   subtitle: "镇民们陆续搬走了，只有我们姐妹留了下来。一周前，姐姐独自去了长明灯塔，再没有回来。" },
   { img: "cg7", motion: "static",   subtitle: "今天，我在她的工作台上发现了那盏旧提灯。灯旁边是她的留言：「只要灯亮着，我就找得到回来的路。」" },
-  { img: "cg8", motion: "static",   subtitle: "我决定带着灯光，重新点亮小镇，找到通往灯塔的路。", hint: "—— 点击开始游戏 ——" },
+  { img: "cg8", motion: "static",   subtitle: "我决定带着灯光，重新点亮小镇，找到通往灯塔的路。", hint: "—— 🖐 张开手掌开始游戏 ——" },
 ];
 const DISSOLVE_TIME = 1.6, PAN_TIME = 10.0;
 
@@ -314,7 +388,7 @@ const cgScene = {
   applyText() {
     const d = CG_DATA[this.index];
     this.subtitleEl.textContent = d.subtitle;
-    this.hintEl.textContent = d.hint || "点击继续...";
+    this.hintEl.textContent = d.hint || "🖐 张开手掌继续...";
     this.hintEl.classList.toggle("gold", this.index === CG_DATA.length - 1);
   },
   next() {
@@ -345,7 +419,7 @@ const cgScene = {
     } else if (CG_DATA[this.index].motion === "pan_down") {
       this.panT = Math.min(PAN_TIME, this.panT + dt);
     }
-    if (clickPressed || actionPressed("light") || pressed["Space"] || pressed["Enter"]) this.next();
+    if (clickPressed || actionPressed("light") || pressed["Space"] || pressed["Enter"] || gestureEvt === "Open_Palm") this.next();
   },
   drawCG(im, motion, alpha) {
     ctx.globalAlpha = alpha;
@@ -433,13 +507,17 @@ const levelScene = {
     puzzleFrame.classList.add("hidden");
     this.burst = null; this.sparks = [];
     this.dlg.open = false;
-    // 触屏设备：短暂显示手势操作提示
-    if (isTouchDevice) {
-      touchHint.classList.remove("hidden");
-      touchHint.style.opacity = 1;
-      clearTimeout(this._hintT);
-      this._hintT = setTimeout(() => { touchHint.style.opacity = 0; }, 6000);
-    }
+    // 所有设备：进入关卡时短暂显示操作提示（摄像头手势为主，键盘 / 触屏兜底）
+    const ctrlLine = isTouchDevice
+      ? "触屏：按住左 / 右半屏移动 · 上滑跳跃 · 靠近路灯点「点灯」"
+      : "键盘：A / D 或 ← / → 移动 · 空格 / W 跳跃 · E 点灯";
+    touchHint.innerHTML = gestureReady
+      ? `🖐 手放画面左 / 右侧移动 · ☝️ 食指向上跳跃 · 👍 拇指向上点灯<br>${ctrlLine}`
+      : ctrlLine;
+    touchHint.classList.remove("hidden");
+    touchHint.style.opacity = 1;
+    clearTimeout(this._hintT);
+    this._hintT = setTimeout(() => { touchHint.style.opacity = 0; }, 8000);
   },
 
   /* ----- 点灯（light.gd: light_up） ----- */
@@ -491,8 +569,8 @@ const levelScene = {
     /* --- 玩家物理（player.gd） --- */
     const frozen = this.dlg.open;
     let dir = 0;
-    // 键盘 + 触屏手势合并（按住左右半屏 = 方向）
-    if (!frozen) dir = (actionDown("right") ? 1 : 0) - (actionDown("left") ? 1 : 0) + touchCtl.move;
+    // 键盘 + 触屏 + 摄像头手势合并（手掌在画面左 / 右侧 = 方向）
+    if (!frozen) dir = (actionDown("right") ? 1 : 0) - (actionDown("left") ? 1 : 0) + touchCtl.move + gestureMove;
     dir = Math.max(-1, Math.min(1, dir));
     if (dir !== 0) {
       this.vx = dir * SPEED;
@@ -502,7 +580,7 @@ const levelScene = {
       if (frozen) this.vx = 0;
     }
     this.vy += GRAVITY * dt;
-    if (!frozen && this.onFloor && (actionPressed("jump") || touchCtl.jump)) this.vy = JUMP_VELOCITY; // 空格/↑ 或上滑手势
+    if (!frozen && this.onFloor && (actionPressed("jump") || touchCtl.jump || gestureEvt === "Pointing_Up")) this.vy = JUMP_VELOCITY; // 空格/↑、上滑或 ☝️ 食指向上
 
     // 动画：移动 walk / 停下 idle
     const want = dir !== 0 ? "walk" : "idle";
@@ -558,7 +636,8 @@ const levelScene = {
 
     /* --- 路灯交互（light.gd：E 键 / 「点灯」按钮 → 先进入手势解密小游戏） --- */
     const nearLamp = Math.hypot(this.px - this.lampX, this.py - this.lampY) < 120;
-    if (!this.lampLit && !this.dlg.open && actionPressed("light") && nearLamp) openPuzzle();
+    // E 键或 👍 拇指向上 → 打开星盘解密
+    if (!this.lampLit && !this.dlg.open && (actionPressed("light") || gestureEvt === "Thumb_Up") && nearLamp) openPuzzle();
     // 触屏设备：靠近路灯时显示右下角的「点灯」按钮
     lightButton.classList.toggle("hidden",
       !(isTouchDevice && nearLamp && !this.lampLit && !this.dlg.open));
@@ -588,7 +667,7 @@ const levelScene = {
       }
       document.getElementById("dlg-text").textContent =
         DIALOGUE_LINES[d.line].slice(0, Math.floor(d.chars));
-      if (clickPressed || actionPressed("light") || pressed["Enter"]) this.advanceDialogue();
+      if (clickPressed || actionPressed("light") || pressed["Enter"] || gestureEvt === "Open_Palm") this.advanceDialogue();
     }
   },
 
@@ -614,12 +693,12 @@ const levelScene = {
 
     const wx = (x) => x - scrollX, wy = (y) => y - scrollY;
 
-    // 「按下 E 点灯」提示（场景树顺序：Label 在瓦片之前；触屏设备显示手势提示）
+    // 点灯提示（场景树顺序：Label 在瓦片之前；👍 手势为主，按键 / 按钮兜底）
     if (!this.lampLit) {
       ctx.fillStyle = "#fff";
-      ctx.font = "37px 'Microsoft YaHei', 'PingFang SC', sans-serif";
+      ctx.font = "32px 'Microsoft YaHei', 'PingFang SC', sans-serif";
       ctx.textBaseline = "top";
-      ctx.fillText(isTouchDevice ? "靠近路灯，点右下角「点灯」" : "按下“E”点灯", wx(418), wy(498));
+      ctx.fillText(isTouchDevice ? "👍 拇指向上点灯（或点右下角按钮）" : "👍 拇指向上点灯（或按 E）", wx(418), wy(498));
     }
 
     // 玩家（场景树顺序：player 在 TileMap 之前）
@@ -747,6 +826,7 @@ let lastT = 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000 || 0.016);
   lastT = now;
+  updateGestures(); // 摄像头手势采样（在场景更新前，产出 gestureEvt / gestureMove）
   if (currentScene) {
     currentScene.update(dt);
     currentScene.draw();
@@ -755,10 +835,12 @@ function loop(now) {
   for (const k in pressed) pressed[k] = false;
   clickPressed = false;
   touchCtl.jump = false;
+  gestureEvt = null;
   requestAnimationFrame(loop);
 }
 
-// 加载画面 → 主菜单
+// 加载画面 → 主菜单（手势识别与图片资源并行加载）
+initGestures();
 loadImages().then(() => {
   switchScene(menuScene);
   requestAnimationFrame(loop);

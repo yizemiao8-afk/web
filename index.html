@@ -13,12 +13,9 @@
   <!-- UI 覆盖层：与画布同坐标系（1152×648），由 JS 统一缩放 -->
   <div id="ui">
 
-    <!-- 开始菜单 -->
+    <!-- 开始菜单：只有一行闪烁的手势提示（点击画面同样可以开始） -->
     <div id="menu-ui" class="layer hidden">
-      <button id="btn-play"     class="menu-btn" style="left:698px; top:346px; width:369px; height:39px;">新游戏</button>
-      <button id="btn-continue" class="menu-btn" style="left:695px; top:387px; width:369px; height:39px;">继续</button>
-      <button id="btn-settings" class="menu-btn" style="left:695px; top:429px; width:369px; height:39px;">设置</button>
-      <div id="menu-toast" class="hidden">Demo 版本暂未开放</div>
+      <div id="menu-start-hint">🖐 张开手掌进入游戏</div>
     </div>
 
     <!-- 开场 CG -->
@@ -33,12 +30,16 @@
       <img id="dlg-portrait" src="assets/portrait/jin.webp" alt="烬">
       <div id="dlg-name">烬</div>
       <div id="dlg-text"></div>
-      <div id="dlg-next">▼</div>
+      <div id="dlg-next">🖐 ▼</div>
     </div>
 
-    <!-- 触屏控件（仅触屏设备显示；在 #ui 内随画面统一缩放） -->
+    <!-- 触屏控件（在 #ui 内随画面统一缩放；点灯按钮仅触屏设备显示） -->
     <button id="btn-light" class="hidden">点灯</button>
     <div id="touch-hint" class="hidden">按住左 / 右半屏移动 · 上滑跳跃 · 靠近路灯点「点灯」</div>
+
+    <!-- 摄像头手势控制：小窗预览 + 状态提示（按 C 可隐藏小窗） -->
+    <video id="cam-preview" autoplay muted playsinline></video>
+    <div id="gesture-status"></div>
 
   </div>
 </div>
